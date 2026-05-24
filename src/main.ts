@@ -56,7 +56,32 @@ function render() {
   banner.style.textAlign = "center";
   banner.style.fontSize = "0.8em";
   banner.style.fontWeight = "bold";
-  banner.textContent = "⚠️ 警告: 信頼できない R コードを実行するとシステムが乗っ取られる危険性があります（OS コマンドインジェクション）。信頼できるコードのみ実行してください。";
+  banner.style.display = "flex";
+  banner.style.justifyContent = "center";
+  banner.style.alignItems = "center";
+  banner.style.position = "relative";
+  
+  const bannerText = document.createElement("span");
+  bannerText.textContent = "⚠️ 警告: 信頼できない R コードを実行するとシステムが乗っ取られる危険性があります（OS コマンドインジェクション）。信頼できるコードのみ実行してください。";
+  banner.appendChild(bannerText);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "✖";
+  closeBtn.style.position = "absolute";
+  closeBtn.style.right = "16px";
+  closeBtn.style.background = "none";
+  closeBtn.style.border = "none";
+  closeBtn.style.color = "#fff";
+  closeBtn.style.cursor = "pointer";
+  closeBtn.style.fontSize = "1.2em";
+  closeBtn.style.padding = "0";
+  closeBtn.addEventListener("click", () => {
+    banner.style.transition = "opacity 0.3s ease";
+    banner.style.opacity = "0";
+    setTimeout(() => banner.remove(), 300);
+  });
+  banner.appendChild(closeBtn);
+
   app.appendChild(banner);
 
   const main = document.createElement("main");
