@@ -1,15 +1,30 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import express from "express";
+import cors from "cors";
+import crypto from "node:crypto";
 
 const PORT = 3847;
-const DEFAULT_R = "C:\\Program Files\\R\\R-4.5.0\\bin\\x64\\R.exe";
+const AUTH_TOKEN = crypto.randomUUID();
 
 function findR() {
-  if (process.env.RLAB_R_PATH && existsSync(process.env.RLAB_R_PATH)) {
-    return process.env.RLAB_R_PATH;
+  if (process.env.RLAB_R_PATH) {
+    const path = process.env.RLAB_R_PATH;
+    if (existsSync(path) && (path.endsWith("R.exe") || path.endsWith("R"))) {
+      return path;
+    }
   }
-  if (existsSync(DEFAULT_R)) return DEFAULT_R;
+  const commonPaths = [
+    "C:\\Program Files\\R\\R-4.5.0\\bin\\x64\\R.exe",
+    "C:\\Program Files\\R\\R-4.4.2\\bin\\x64\\R.exe",
+    "C:\\Program Files\\R\\R-4.4.1\\bin\\x64\\R.exe",
+    "C:\\Program Files\\R\\R-4.4.0\\bin\\x64\\R.exe",
+    "C:\\Program Files\\R\\R-4.3.3\\bin\\x64\\R.exe",
+    "C:\\Program Files\\R\\R-4.3.2\\bin\\x64\\R.exe",
+  ];
+  for (const p of commonPaths) {
+    if (existsSync(p)) return p;
+  }
   return null;
 }
 
@@ -32,7 +47,17 @@ function runR(code, rPath) {
 }
 
 const app = express();
+app.use(cors({ origin: ["http://localhost:5173", "http://127.0.0.1:5173"] }));
 app.use(express.json({ limit: "1mb" }));
+
+app.use((req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== `Bearer ${AUTH_TOKEN}`) {
+    res.status(401).json({ ok: false, error: "Unauthorized" });
+    return;
+  }
+  next();
+});
 
 app.get("/api/health", (_req, res) => {
   const rPath = findR();
@@ -64,4 +89,5 @@ app.post("/api/execute", async (req, res) => {
 
 app.listen(PORT, "127.0.0.1", () => {
   console.log(`R bridge http://127.0.0.1:${PORT}`);
+  console.log(`API Token (Authorization: Bearer <token>): ${AUTH_TOKEN}`);
 });

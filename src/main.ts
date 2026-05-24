@@ -35,20 +35,41 @@ function render() {
   cellEditors.forEach((v) => v.destroy());
   cellEditors.clear();
 
-  app.innerHTML = `
-  <header class="header">
+  app.replaceChildren();
+
+  const header = document.createElement("header");
+  header.className = "header";
+  header.innerHTML = `
     <h1>R Smart</h1>
     <span id="r-status" class="badge">R 確認中…</span>
     <div class="header-spacer"></div>
     <button type="button" id="theme-toggle" class="toolbar-btn theme-btn"></button>
     <button type="button" id="add-cell" class="toolbar-btn">＋ セルを追加</button>
-  </header>
-  <main class="notebook" id="notebook-root"></main>
-  <p class="hint">Shift+Enter で実行して次のセルへ。入力中は関数候補が表示されます（Ctrl+Space）。</p>
   `;
+  app.appendChild(header);
 
-  const root = document.querySelector<HTMLDivElement>("#notebook-root")!;
-  root.replaceChildren();
+  const banner = document.createElement("div");
+  banner.className = "security-banner";
+  banner.style.backgroundColor = "var(--accent)";
+  banner.style.color = "#fff";
+  banner.style.padding = "4px 16px";
+  banner.style.textAlign = "center";
+  banner.style.fontSize = "0.8em";
+  banner.style.fontWeight = "bold";
+  banner.textContent = "⚠️ 警告: 信頼できない R コードを実行するとシステムが乗っ取られる危険性があります（OS コマンドインジェクション）。信頼できるコードのみ実行してください。";
+  app.appendChild(banner);
+
+  const main = document.createElement("main");
+  main.className = "notebook";
+  main.id = "notebook-root";
+  app.appendChild(main);
+
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "Shift+Enter で実行して次のセルへ。入力中は関数候補が表示されます（Ctrl+Space）。";
+  app.appendChild(hint);
+
+  const root = main;
 
   cells.forEach((cell, index) => {
     const section = document.createElement("section");
@@ -56,17 +77,49 @@ function render() {
     section.dataset.cellIndex = String(index);
 
     const canRemove = cells.length > 1;
-    section.innerHTML = `
-      <div class="cell-toolbar">
-        <span class="cell-label">In [${index + 1}]</span>
-        <div class="cell-actions">
-          ${canRemove ? `<button type="button" class="remove-btn" data-action="remove" title="セルを削除">✕</button>` : ""}
-          <button type="button" class="run-btn" data-action="run">▶ 実行</button>
-        </div>
-      </div>
-      <div class="cm-host" data-cell-index="${index}"></div>
-      <pre class="output muted" data-output-for="${index}">Shift+Enter または ▶ で実行</pre>
-    `;
+    
+    const toolbar = document.createElement("div");
+    toolbar.className = "cell-toolbar";
+    
+    const label = document.createElement("span");
+    label.className = "cell-label";
+    label.textContent = `In [${index + 1}]`;
+    toolbar.appendChild(label);
+    
+    const actions = document.createElement("div");
+    actions.className = "cell-actions";
+    
+    if (canRemove) {
+      const rmBtn = document.createElement("button");
+      rmBtn.type = "button";
+      rmBtn.className = "remove-btn";
+      rmBtn.dataset.action = "remove";
+      rmBtn.title = "セルを削除";
+      rmBtn.textContent = "✕";
+      actions.appendChild(rmBtn);
+    }
+    
+    const runBtn = document.createElement("button");
+    runBtn.type = "button";
+    runBtn.className = "run-btn";
+    runBtn.dataset.action = "run";
+    runBtn.textContent = "▶ 実行";
+    actions.appendChild(runBtn);
+    
+    toolbar.appendChild(actions);
+    section.appendChild(toolbar);
+
+    const cmHost = document.createElement("div");
+    cmHost.className = "cm-host";
+    cmHost.dataset.cellIndex = String(index);
+    section.appendChild(cmHost);
+
+    const pre = document.createElement("pre");
+    pre.className = "output muted";
+    pre.dataset.outputFor = String(index);
+    pre.textContent = "Shift+Enter または ▶ で実行";
+    section.appendChild(pre);
+
     root.appendChild(section);
 
     const host = section.querySelector<HTMLDivElement>(".cm-host")!;

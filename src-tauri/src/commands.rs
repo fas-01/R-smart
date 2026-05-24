@@ -4,18 +4,28 @@ use std::path::Path;
 use std::sync::OnceLock;
 use tauri::AppHandle;
 
-const DEFAULT_R: &str = r"C:\Program Files\R\R-4.5.0\bin\x64\R.exe";
+
 
 static R_SESSION: OnceLock<RSessionHandle> = OnceLock::new();
 
 fn find_r() -> Option<String> {
     if let Ok(path) = std::env::var("RLAB_R_PATH") {
-        if Path::new(&path).exists() {
+        if Path::new(&path).exists() && (path.ends_with("R.exe") || path.ends_with("R")) {
             return Some(path);
         }
     }
-    if Path::new(DEFAULT_R).exists() {
-        return Some(DEFAULT_R.to_string());
+    let common_paths = [
+        r"C:\Program Files\R\R-4.5.0\bin\x64\R.exe",
+        r"C:\Program Files\R\R-4.4.2\bin\x64\R.exe",
+        r"C:\Program Files\R\R-4.4.1\bin\x64\R.exe",
+        r"C:\Program Files\R\R-4.4.0\bin\x64\R.exe",
+        r"C:\Program Files\R\R-4.3.3\bin\x64\R.exe",
+        r"C:\Program Files\R\R-4.3.2\bin\x64\R.exe",
+    ];
+    for p in common_paths {
+        if Path::new(p).exists() {
+            return Some(p.to_string());
+        }
     }
     None
 }
@@ -87,13 +97,16 @@ pub fn r_execute(code: String) -> RExecuteResult {
             exit_code,
             error: None,
         },
-        Err(e) => RExecuteResult {
-            ok: false,
-            stdout: String::new(),
-            stderr: e.clone(),
-            exit_code: 1,
-            error: Some(e),
-        },
+        Err(e) => {
+            eprintln!("R execution error: {}", e);
+            RExecuteResult {
+                ok: false,
+                stdout: String::new(),
+                stderr: "Internal execution error".into(),
+                exit_code: 1,
+                error: Some("Failed to evaluate R code".into()),
+            }
+        }
     }
 }
 

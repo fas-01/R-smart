@@ -14,15 +14,14 @@ pub struct RSession {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<std::process::ChildStdout>,
-    script_dir: PathBuf,
+    script_dir: tempfile::TempDir,
     /// Background pump appends R stderr (install.packages progress, warnings).
     stderr_acc: Arc<Mutex<String>>,
 }
 
 impl RSession {
     pub fn start(r_path: &str) -> std::io::Result<Self> {
-        let script_dir = std::env::temp_dir().join("r-lab-scripts");
-        std::fs::create_dir_all(&script_dir)?;
+        let script_dir = tempfile::tempdir()?;
 
         let mut child = Command::new(r_path)
             .args(["--slave", "--no-save", "--no-restore"])
@@ -51,9 +50,8 @@ impl RSession {
                 match reader.read_line(&mut line) {
                     Ok(0) => break,
                     Ok(_) => {
-                        if let Ok(mut acc) = acc_for_thread.lock() {
-                            acc.push_str(&line);
-                        }
+                        let mut acc = acc_for_thread.lock().unwrap_or_else(|e| e.into_inner());
+                        acc.push_str(&line);
                     }
                     Err(_) => break,
                 }
@@ -80,6 +78,7 @@ impl RSession {
             .map(|d| d.as_millis())
             .unwrap_or(0);
         self.script_dir
+            .path()
             .join(format!("cell_{}_{}.R", ts, n))
     }
 
@@ -88,9 +87,7 @@ impl RSession {
     }
 
     pub fn evaluate(&mut self, code: &str) -> std::io::Result<(String, String)> {
-        if let Ok(mut acc) = self.stderr_acc.lock() {
-            acc.clear();
-        }
+        self.stderr_acc.lock().unwrap_or_else(|e| e.into_inner()).clear();
 
         let script_path = self.script_path();
         std::fs::write(&script_path, code)?;
@@ -130,11 +127,7 @@ flush.console()
         let _ = std::fs::remove_file(&script_path);
 
         let stdout = stdout_lines.join("\n");
-        let stderr = self
-            .stderr_acc
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+        let stderr = self.stderr_acc.lock().unwrap_or_else(|e| e.into_inner()).clone();
 
         Ok((stdout, stderr))
     }
@@ -146,9 +139,7 @@ flush.console()
         limit: usize,
         functions_only: bool,
     ) -> std::io::Result<Vec<String>> {
-        if let Ok(mut acc) = self.stderr_acc.lock() {
-            acc.clear();
-        }
+        self.stderr_acc.lock().unwrap_or_else(|e| e.into_inner()).clear();
 
         let prefix_path = self.script_path().with_extension("prefix.txt");
         std::fs::write(&prefix_path, prefix)?;
@@ -224,7 +215,7 @@ impl RSessionHandle {
     }
 
     fn ensure_session(&self) -> Result<(), String> {
-        let mut guard = self.session.lock().map_err(|e| e.to_string())?;
+        let mut guard = self.session.lock().unwrap_or_else(|e| e.into_inner());
         let needs_start = match guard.as_mut() {
             None => true,
             Some(s) => !s.is_alive(),
@@ -238,7 +229,7 @@ impl RSessionHandle {
 
     pub fn evaluate(&self, code: &str) -> Result<(String, String, i32), String> {
         self.ensure_session()?;
-        let mut guard = self.session.lock().map_err(|e| e.to_string())?;
+        let mut guard = self.session.lock().unwrap_or_else(|e| e.into_inner());
         let session = guard.as_mut().ok_or("R session not available")?;
 
         match session.evaluate(code) {
@@ -267,7 +258,7 @@ impl RSessionHandle {
             return Ok(vec![]);
         }
         self.ensure_session()?;
-        let mut guard = self.session.lock().map_err(|e| e.to_string())?;
+        let mut guard = self.session.lock().unwrap_or_else(|e| e.into_inner());
         let session = guard.as_mut().ok_or("R session not available")?;
 
         match session.complete(prefix, limit, functions_only) {
