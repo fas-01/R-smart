@@ -1,0 +1,11 @@
+# IDE / Agent Plans
+*.plan.md
+
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+
+# Tauri build artifacts
+src-tauri/target/
