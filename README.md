@@ -19,7 +19,7 @@ Tauri と CodeMirror 6 を基盤にしており、Jupyter Notebook のような�
 
 ## 🎨 スクリーンショット
 
-![R Lab UI Mockup](./screenshot.png)
+![R Lab UI Mockup](./screenshots.png)
 
 ---
 
