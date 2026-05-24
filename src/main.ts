@@ -37,7 +37,7 @@ function render() {
 
   app.innerHTML = `
   <header class="header">
-    <h1>R Lab</h1>
+    <h1>R Smart</h1>
     <span id="r-status" class="badge">R 確認中…</span>
     <div class="header-spacer"></div>
     <button type="button" id="theme-toggle" class="toolbar-btn theme-btn"></button>

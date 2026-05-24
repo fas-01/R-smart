@@ -10,7 +10,7 @@ Tauri と CodeMirror 6 を基盤にしており、Jupyter Notebook のような�
 
 手動でコンパイルすることなく、すぐにアプリを使用したい場合は、以下のビルド済みインストーラーをダウンロードして実行してください：
 
-👉 **[Windows用インストーラー (R_Lab_0.1.0_x64-setup.exe) を直接ダウンロード](./releases/R_Lab_0.1.0_x64-setup.exe)**
+👉 **[Windows用インストーラー (R_Smart_0.1.0_x64-setup.exe) を直接ダウンロード](./releases/R_Smart_0.1.0_x64-setup.exe)**
 
 > [!NOTE]
 > アプリを動作させるには、お使いのPCに **[R (R-project)](https://www.r-project.org/)** がインストールされ、環境変数 `PATH` に設定されている必要があります。
@@ -19,7 +19,7 @@ Tauri と CodeMirror 6 を基盤にしており、Jupyter Notebook のような�
 
 ## 🎨 スクリーンショット
 
-![R Lab UI Mockup](./screenshots.png)
+![R Smart UI Mockup](./screenshots.png)
 
 ---
 
@@ -52,7 +52,7 @@ Tauri と CodeMirror 6 を基盤にしており、Jupyter Notebook のような�
 
 アプリを使用するには、お使いのPCに **[R (R-project)](https://www.r-project.org/)** がインストールされ、環境変数 `PATH` に設定されている必要があります（コマンドプロンプトやPowerShellで `R --version` が実行できる状態）。
 
-Rがインストールされていれば、ダウンロードした `.exe` ファイルを起動するだけで、すぐに R Lab ノートブックをご利用いただけます。
+Rがインストールされていれば、ダウンロードした `.exe` ファイルを起動するだけで、すぐに R Smart ノートブックをご利用いただけます。
 
 ---
 
