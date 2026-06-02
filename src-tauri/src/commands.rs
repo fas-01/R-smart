@@ -11,7 +11,14 @@ static R_SESSION: OnceLock<RSessionHandle> = OnceLock::new();
 fn find_r() -> Option<String> {
     if let Ok(path) = std::env::var("RLAB_R_PATH") {
         if Path::new(&path).exists() && (path.ends_with("R.exe") || path.ends_with("R")) {
-            if let Ok(output) = std::process::Command::new(&path).arg("--version").output() {
+            let mut cmd = std::process::Command::new(&path);
+            cmd.arg("--version");
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x08000000);
+            }
+            if let Ok(output) = cmd.output() {
                 if String::from_utf8_lossy(&output.stdout).contains("R version") {
                     return Some(path);
                 }

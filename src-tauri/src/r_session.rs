@@ -23,12 +23,19 @@ impl RSession {
     pub fn start(r_path: &str) -> std::io::Result<Self> {
         let script_dir = tempfile::tempdir()?;
 
-        let mut child = Command::new(r_path)
-            .args(["--slave", "--no-save", "--no-restore"])
+        let mut cmd = Command::new(r_path);
+        cmd.args(["--slave", "--no-save", "--no-restore"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        let mut child = cmd.spawn()?;
 
         let stdin = child.stdin.take().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::Other, "R stdin unavailable")
