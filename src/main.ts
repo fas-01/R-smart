@@ -187,6 +187,11 @@ function render() {
     pre.textContent = "Shift+Enter または ▶ で実行";
     section.appendChild(pre);
 
+    const imageContainer = document.createElement("div");
+    imageContainer.className = "image-output";
+    imageContainer.dataset.imagesFor = String(index);
+    section.appendChild(imageContainer);
+
     root.appendChild(section);
 
     const host = section.querySelector<HTMLDivElement>(".cm-host")!;
@@ -256,6 +261,7 @@ type RExecuteResult = {
   stderr: string;
   exitCode: number;
   error?: string;
+  imagesBase64?: string[];
 };
 
 async function checkHealth(statusEl: HTMLSpanElement) {
@@ -375,6 +381,7 @@ function checkDangerousCode(code: string): Promise<boolean> {
 async function runCell(index: number) {
   const view = cellEditors.get(index);
   const outputEl = document.querySelector<HTMLPreElement>(`[data-output-for="${index}"]`);
+  const imageContainer = document.querySelector<HTMLDivElement>(`[data-images-for="${index}"]`);
   const runBtn = document.querySelector<HTMLButtonElement>(
     `.cell[data-cell-index="${index}"] [data-action='run']`,
   );
@@ -387,6 +394,7 @@ async function runCell(index: number) {
   cells[index]!.code = code;
   outputEl.textContent = "実行中…";
   outputEl.className = "output";
+  if (imageContainer) imageContainer.innerHTML = "";
   if (runBtn) runBtn.disabled = true;
   if (timeoutSelect) timeoutSelect.disabled = true;
 
@@ -411,6 +419,18 @@ async function runCell(index: number) {
     }
     outputEl.textContent = formatOutput(data);
     outputEl.className = data.ok ? "output ok" : "output err";
+
+    if (imageContainer && data.imagesBase64) {
+      data.imagesBase64.forEach((b64) => {
+        const img = document.createElement("img");
+        img.src = b64;
+        img.style.maxWidth = "100%";
+        img.style.marginTop = "8px";
+        img.style.borderRadius = "4px";
+        img.style.backgroundColor = "white"; // Provide solid background for transparent plots
+        imageContainer.appendChild(img);
+      });
+    }
   } catch (e) {
     outputEl.textContent = `実行失敗: ${e}`;
     outputEl.className = "output err";

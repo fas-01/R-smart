@@ -66,6 +66,9 @@ pub struct RExecuteResult {
     pub exit_code: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub images_base64: Vec<String>,
 }
 
 #[tauri::command]
@@ -78,6 +81,7 @@ pub fn r_execute(code: String, timeout_sec: Option<u64>) -> RExecuteResult {
             stderr: String::new(),
             exit_code: 1,
             error: Some("コードが空です".into()),
+            images_base64: vec![],
         };
     }
 
@@ -90,16 +94,18 @@ pub fn r_execute(code: String, timeout_sec: Option<u64>) -> RExecuteResult {
             error: Some(
                 "R が見つかりません。環境変数 RLAB_R_PATH で R.exe を指定してください。".into(),
             ),
+            images_base64: vec![],
         };
     };
 
     match session.evaluate(code, timeout_sec) {
-        Ok((stdout, stderr, exit_code)) => RExecuteResult {
+        Ok((stdout, stderr, exit_code, images_base64)) => RExecuteResult {
             ok: exit_code == 0,
             stdout,
             stderr,
             exit_code,
             error: None,
+            images_base64,
         },
         Err(e) => {
             eprintln!("R execution error: {}", e);
@@ -109,6 +115,7 @@ pub fn r_execute(code: String, timeout_sec: Option<u64>) -> RExecuteResult {
                 stderr: "Internal execution error".into(),
                 exit_code: 1,
                 error: Some("Failed to evaluate R code".into()),
+                images_base64: vec![],
             }
         }
     }

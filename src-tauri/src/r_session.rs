@@ -110,13 +110,21 @@ impl RSession {
         s.replace('\"', "\\\"")
     }
 
-    pub fn evaluate(&mut self, code: &str, timeout_sec: Option<u64>) -> std::io::Result<(String, String)> {
+    pub fn evaluate(&mut self, code: &str, timeout_sec: Option<u64>) -> std::io::Result<(String, String, Vec<String>)> {
         self.stderr_acc.lock().unwrap_or_else(|e| e.into_inner()).clear();
 
         let script_path = self.script_path();
         std::fs::write(&script_path, code)?;
 
         let path_lit = Self::r_string_literal(&script_path);
+        
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let n = SCRIPT_COUNTER.load(Ordering::Relaxed);
+        let plot_pattern = self.script_dir.path().join(format!("plot_{}_{}_%03d.png", ts, n));
+        let plot_pattern_lit = Self::r_string_literal(&plot_pattern);
         
         let timeout_setup = match timeout_sec {
             Some(secs) => format!("setTimeLimit(elapsed = {}, transient = TRUE)", secs),
@@ -126,6 +134,7 @@ impl RSession {
         // Non-interactive CRAN default so install.packages does not prompt.
         let wrapper = format!(
             r#"options(repos = c(CRAN = "https://cloud.r-project.org"), BioC_mirror = "https://bioconductor.org")
+png("{plot_pattern_lit}", width=800, height=600, res=100)
 tryCatch({{
   {}
   invisible(source("{path_lit}", local = FALSE, echo = FALSE, print.eval = TRUE))
@@ -133,12 +142,14 @@ tryCatch({{
   cat("Error:", conditionMessage(e), "\n")
 }}, finally = {{
   setTimeLimit(elapsed = Inf, transient = TRUE)
+  graphics.off()
 }})
 cat("{END_MARKER}\n")
 flush.console()
 "#,
             timeout_setup,
             path_lit = path_lit,
+            plot_pattern_lit = plot_pattern_lit,
             END_MARKER = END_MARKER
         );
 
@@ -177,7 +188,36 @@ flush.console()
         let stdout = stdout_lines.join("\n");
         let stderr = self.stderr_acc.lock().unwrap_or_else(|e| e.into_inner()).clone();
 
-        Ok((stdout, stderr))
+        use base64::Engine;
+        let mut image_paths = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(self.script_dir.path()) {
+            let prefix = format!("plot_{}_{}_", ts, n);
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                    if file_name.starts_with(&prefix) && file_name.ends_with(".png") {
+                        image_paths.push(path);
+                    }
+                }
+            }
+        }
+        image_paths.sort();
+
+        let mut images = Vec::new();
+        for path in image_paths {
+            if let Ok(meta) = path.metadata() {
+                // 1024 bytes threshold to ignore empty blank plots if generated
+                if meta.len() > 1024 {
+                    if let Ok(bytes) = std::fs::read(&path) {
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        images.push(format!("data:image/png;base64,{}", b64));
+                    }
+                }
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+
+        Ok((stdout, stderr, images))
     }
 
     /// Prefix completion via `utils::apropos` (regex from glob `prefix*`).
@@ -285,18 +325,18 @@ impl RSessionHandle {
         Ok(())
     }
 
-    pub fn evaluate(&self, code: &str, timeout_sec: Option<u64>) -> Result<(String, String, i32), String> {
+    pub fn evaluate(&self, code: &str, timeout_sec: Option<u64>) -> Result<(String, String, i32, Vec<String>), String> {
         self.ensure_session()?;
         let mut guard = self.session.lock().unwrap_or_else(|e| e.into_inner());
         let session = guard.as_mut().ok_or("R session not available")?;
 
         match session.evaluate(code, timeout_sec) {
-            Ok((stdout, stderr)) => {
+            Ok((stdout, stderr, images)) => {
                 let stdout_err = stdout.starts_with("Error:");
                 let stderr_fatal = stderr.contains("Execution halted");
                 let ok = !stdout_err && !stderr_fatal;
                 let exit_code = if ok { 0 } else { 1 };
-                Ok((stdout, stderr, exit_code))
+                Ok((stdout, stderr, exit_code, images))
             }
             Err(e) => {
                 *guard = None;
