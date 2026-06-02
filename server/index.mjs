@@ -89,5 +89,4 @@ app.post("/api/execute", async (req, res) => {
 
 app.listen(PORT, "127.0.0.1", () => {
   console.log(`R bridge http://127.0.0.1:${PORT}`);
-  console.log(`API Token (Authorization: Bearer <token>): ${AUTH_TOKEN}`);
 });

@@ -39,13 +39,34 @@ function render() {
 
   const header = document.createElement("header");
   header.className = "header";
-  header.innerHTML = `
-    <h1>R Smart</h1>
-    <span id="r-status" class="badge">R 確認中…</span>
-    <div class="header-spacer"></div>
-    <button type="button" id="theme-toggle" class="toolbar-btn theme-btn"></button>
-    <button type="button" id="add-cell" class="toolbar-btn">＋ セルを追加</button>
-  `;
+
+  const h1 = document.createElement("h1");
+  h1.textContent = "R Smart";
+  header.appendChild(h1);
+
+  const statusSpan = document.createElement("span");
+  statusSpan.id = "r-status";
+  statusSpan.className = "badge";
+  statusSpan.textContent = "R 確認中…";
+  header.appendChild(statusSpan);
+
+  const spacer = document.createElement("div");
+  spacer.className = "header-spacer";
+  header.appendChild(spacer);
+
+  const themeBtnEl = document.createElement("button");
+  themeBtnEl.type = "button";
+  themeBtnEl.id = "theme-toggle";
+  themeBtnEl.className = "toolbar-btn theme-btn";
+  header.appendChild(themeBtnEl);
+
+  const addCellBtn = document.createElement("button");
+  addCellBtn.type = "button";
+  addCellBtn.id = "add-cell";
+  addCellBtn.className = "toolbar-btn";
+  addCellBtn.textContent = "＋ セルを追加";
+  header.appendChild(addCellBtn);
+
   app.appendChild(header);
 
   const banner = document.createElement("div");
@@ -260,6 +281,97 @@ function formatOutput(data: RExecuteResult): string {
   return parts.join("\n--- stderr ---\n");
 }
 
+const DANGEROUS_FUNCTIONS = ["system", "shell", "Sys.setenv", "unlink", "file.remove", "system2", "file.create", "file.append"];
+const DANGEROUS_REGEX = new RegExp(`\\b(${DANGEROUS_FUNCTIONS.join("|")})\\s*\\(`, "i");
+
+function checkDangerousCode(code: string): Promise<boolean> {
+  if (!DANGEROUS_REGEX.test(code)) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    const dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+
+    const title = document.createElement("h2");
+    title.textContent = "警告: 危険なコードの実行";
+    title.style.color = "var(--err)";
+    title.style.marginTop = "0";
+
+    const msg = document.createElement("p");
+    msg.textContent = "実行しようとしているコードにOS操作などの危険な関数が含まれています。システムに重大な影響を与える可能性があります。";
+
+    const instruction = document.createElement("p");
+    instruction.textContent = "本当に実行する場合は、下の入力欄に「OK」と入力し、10秒経過後にボタンを押してください。";
+    instruction.style.fontWeight = "bold";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "OK と入力";
+    input.className = "modal-input";
+
+    const btnContainer = document.createElement("div");
+    btnContainer.className = "modal-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "キャンセル";
+    cancelBtn.className = "toolbar-btn";
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.textContent = "実行する (10)";
+    confirmBtn.className = "toolbar-btn err-btn";
+    confirmBtn.disabled = true;
+
+    btnContainer.appendChild(cancelBtn);
+    btnContainer.appendChild(confirmBtn);
+
+    dialog.appendChild(title);
+    dialog.appendChild(msg);
+    dialog.appendChild(instruction);
+    dialog.appendChild(input);
+    dialog.appendChild(btnContainer);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    let secondsLeft = 10;
+    const checkEnable = () => {
+      if (secondsLeft <= 0 && input.value.trim() === "OK") {
+        confirmBtn.disabled = false;
+      } else {
+        confirmBtn.disabled = true;
+      }
+    };
+
+    const timer = setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft > 0) {
+        confirmBtn.textContent = `実行する (${secondsLeft})`;
+      } else {
+        clearInterval(timer);
+        confirmBtn.textContent = "実行する";
+        checkEnable();
+      }
+    }, 1000);
+
+    input.addEventListener("input", checkEnable);
+
+    cancelBtn.addEventListener("click", () => {
+      clearInterval(timer);
+      document.body.removeChild(overlay);
+      resolve(false);
+    });
+
+    confirmBtn.addEventListener("click", () => {
+      clearInterval(timer);
+      document.body.removeChild(overlay);
+      resolve(true);
+    });
+
+    input.focus();
+  });
+}
+
 async function runCell(index: number) {
   const view = cellEditors.get(index);
   const outputEl = document.querySelector<HTMLPreElement>(`[data-output-for="${index}"]`);
@@ -277,6 +389,15 @@ async function runCell(index: number) {
   outputEl.className = "output";
   if (runBtn) runBtn.disabled = true;
   if (timeoutSelect) timeoutSelect.disabled = true;
+
+  const isSafeToRun = await checkDangerousCode(code);
+  if (!isSafeToRun) {
+    outputEl.textContent = "実行がキャンセルされました。";
+    outputEl.className = "output";
+    if (runBtn) runBtn.disabled = false;
+    if (timeoutSelect) timeoutSelect.disabled = false;
+    return;
+  }
 
   const timeoutSec = timeoutSelect ? Number(timeoutSelect.value) : 10;
 

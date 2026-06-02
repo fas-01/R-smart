@@ -13,7 +13,7 @@ static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub struct RSession {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<std::process::ChildStdout>,
+    stdout_rx: std::sync::mpsc::Receiver<String>,
     script_dir: tempfile::TempDir,
     /// Background pump appends R stderr (install.packages progress, warnings).
     stderr_acc: Arc<Mutex<String>>,
@@ -58,10 +58,28 @@ impl RSession {
             }
         });
 
+        let (stdout_tx, stdout_rx) = std::sync::mpsc::channel();
+        let mut stdout_reader = BufReader::new(stdout);
+        thread::spawn(move || {
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match stdout_reader.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        if stdout_tx.send(line.clone()).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
         Ok(Self {
             child,
             stdin,
-            stdout: BufReader::new(stdout),
+            stdout_rx,
             script_dir,
             stderr_acc,
         })
@@ -83,7 +101,8 @@ impl RSession {
     }
 
     fn r_string_literal(path: &Path) -> String {
-        path.to_string_lossy().replace('\\', "/").replace('\'', "\\'")
+        let s = path.to_string_lossy().replace('\\', "/");
+        s.replace('\"', "\\\"")
     }
 
     pub fn evaluate(&mut self, code: &str, timeout_sec: Option<u64>) -> std::io::Result<(String, String)> {
@@ -109,7 +128,7 @@ impl RSession {
             r#"options(repos = c(CRAN = "https://cloud.r-project.org"), BioC_mirror = "https://bioconductor.org")
 tryCatch({{
   {}
-  invisible(source('{path_lit}', local = FALSE, echo = FALSE, print.eval = TRUE))
+  invisible(source("{path_lit}", local = FALSE, echo = FALSE, print.eval = TRUE))
 }}, error = function(e) {{
   cat("Error:", conditionMessage(e), "\n")
 }}, finally = {{
@@ -126,19 +145,35 @@ flush.console()
         self.stdin.write_all(wrapper.as_bytes())?;
         self.stdin.flush()?;
 
+        let timeout = timeout_sec.map(std::time::Duration::from_secs).unwrap_or(std::time::Duration::from_secs(10));
+        let start = std::time::Instant::now();
+
         let mut stdout_lines: Vec<String> = Vec::new();
-        let mut line = String::new();
         loop {
-            line.clear();
-            let n = self.stdout.read_line(&mut line)?;
-            if n == 0 {
-                break;
+            let recv_res = if timeout.as_secs() > 0 {
+                self.stdout_rx.recv_timeout(std::time::Duration::from_millis(100))
+            } else {
+                self.stdout_rx.recv().map_err(|_| std::sync::mpsc::RecvTimeoutError::Disconnected)
+            };
+
+            match recv_res {
+                Ok(line) => {
+                    let trimmed = line.trim_end_matches(['\r', '\n']);
+                    if trimmed == END_MARKER {
+                        break;
+                    }
+                    stdout_lines.push(trimmed.to_string());
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if timeout.as_secs() > 0 && start.elapsed() > timeout {
+                        let _ = self.child.kill();
+                        return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Execution timed out"));
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
             }
-            let trimmed = line.trim_end_matches(['\r', '\n']);
-            if trimmed == END_MARKER {
-                break;
-            }
-            stdout_lines.push(trimmed.to_string());
         }
 
         let _ = std::fs::remove_file(&script_path);
@@ -168,7 +203,7 @@ flush.console()
         let wrapper = format!(
             r#"options(repos = c(CRAN = "https://cloud.r-project.org"), BioC_mirror = "https://bioconductor.org")
 tryCatch({{
-  .lines <- readLines('{path_lit}', encoding = "UTF-8", warn = FALSE)
+  .lines <- readLines("{path_lit}", encoding = "UTF-8", warn = FALSE)
   .prefix <- paste(.lines, collapse = "\n")
   pat <- utils::glob2rx(paste0(.prefix, "*"))
   hits <- tryCatch(unique(stats::na.omit(utils::apropos(pat, mode = "{mode}"))), error = function(e) character(0))
@@ -189,19 +224,29 @@ flush.console()
         self.stdin.write_all(wrapper.as_bytes())?;
         self.stdin.flush()?;
 
+        let timeout = std::time::Duration::from_secs(5); // completion timeout
+        let start = std::time::Instant::now();
+
         let mut stdout_lines: Vec<String> = Vec::new();
-        let mut line = String::new();
         loop {
-            line.clear();
-            let n = self.stdout.read_line(&mut line)?;
-            if n == 0 {
-                break;
+            match self.stdout_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                Ok(line) => {
+                    let trimmed = line.trim_end_matches(['\r', '\n']);
+                    if trimmed == END_MARKER {
+                        break;
+                    }
+                    stdout_lines.push(trimmed.to_string());
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if start.elapsed() > timeout {
+                        let _ = self.child.kill();
+                        return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Completion timed out"));
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
             }
-            let trimmed = line.trim_end_matches(['\r', '\n']);
-            if trimmed == END_MARKER {
-                break;
-            }
-            stdout_lines.push(trimmed.to_string());
         }
 
         let _ = std::fs::remove_file(&prefix_path);
