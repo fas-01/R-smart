@@ -249,7 +249,7 @@ function focusNextCell(currentIndex: number) {
   }
 }
 
-type RHealth = { rFound: boolean; rPath: string | null };
+type RHealth = { rFound: boolean };
 type RExecuteResult = {
   ok: boolean;
   stdout: string;
@@ -400,9 +400,10 @@ async function runCell(index: number) {
   }
 
   const timeoutSec = timeoutSelect ? Number(timeoutSelect.value) : 10;
+  const timeoutParam = timeoutSec === 0 ? null : timeoutSec;
 
   try {
-    const data = await invoke<RExecuteResult>("r_execute", { code, timeoutSec });
+    const data = await invoke<RExecuteResult>("r_execute", { code, timeoutSec: timeoutParam });
     if (data.error) {
       outputEl.textContent = data.error;
       outputEl.className = "output err";

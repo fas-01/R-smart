@@ -11,20 +11,27 @@ static R_SESSION: OnceLock<RSessionHandle> = OnceLock::new();
 fn find_r() -> Option<String> {
     if let Ok(path) = std::env::var("RLAB_R_PATH") {
         if Path::new(&path).exists() && (path.ends_with("R.exe") || path.ends_with("R")) {
-            return Some(path);
+            if let Ok(output) = std::process::Command::new(&path).arg("--version").output() {
+                if String::from_utf8_lossy(&output.stdout).contains("R version") {
+                    return Some(path);
+                }
+            }
         }
     }
-    let common_paths = [
-        r"C:\Program Files\R\R-4.5.0\bin\x64\R.exe",
-        r"C:\Program Files\R\R-4.4.2\bin\x64\R.exe",
-        r"C:\Program Files\R\R-4.4.1\bin\x64\R.exe",
-        r"C:\Program Files\R\R-4.4.0\bin\x64\R.exe",
-        r"C:\Program Files\R\R-4.3.3\bin\x64\R.exe",
-        r"C:\Program Files\R\R-4.3.2\bin\x64\R.exe",
-    ];
-    for p in common_paths {
-        if Path::new(p).exists() {
-            return Some(p.to_string());
+    if let Ok(entries) = std::fs::read_dir(r"C:\Program Files\R") {
+        let mut versions = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let r_exe = path.join("bin").join("x64").join("R.exe");
+                if r_exe.exists() {
+                    versions.push(r_exe);
+                }
+            }
+        }
+        versions.sort_by(|a, b| b.cmp(a));
+        if let Some(p) = versions.first() {
+            return Some(p.to_string_lossy().to_string());
         }
     }
     None
@@ -41,15 +48,12 @@ pub fn init_r_session(_app: &AppHandle) {
 #[serde(rename_all = "camelCase")]
 pub struct RHealth {
     pub r_found: bool,
-    pub r_path: Option<String>,
 }
 
 #[tauri::command]
 pub fn r_health() -> RHealth {
-    let r_path = find_r();
     RHealth {
-        r_found: r_path.is_some(),
-        r_path,
+        r_found: find_r().is_some(),
     }
 }
 

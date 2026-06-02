@@ -51,7 +51,12 @@ impl RSession {
                     Ok(0) => break,
                     Ok(_) => {
                         let mut acc = acc_for_thread.lock().unwrap_or_else(|e| e.into_inner());
-                        acc.push_str(&line);
+                        if acc.len() < 1024 * 1024 {
+                            acc.push_str(&line);
+                            if acc.len() >= 1024 * 1024 {
+                                acc.push_str("\n[stderr truncated due to size limit]\n");
+                            }
+                        }
                     }
                     Err(_) => break,
                 }
@@ -113,14 +118,9 @@ impl RSession {
 
         let path_lit = Self::r_string_literal(&script_path);
         
-        let timeout_setup = if let Some(secs) = timeout_sec {
-            if secs > 0 {
-                format!("setTimeLimit(elapsed = {}, transient = TRUE)", secs)
-            } else {
-                "setTimeLimit(elapsed = Inf, transient = TRUE)".to_string()
-            }
-        } else {
-            "setTimeLimit(elapsed = 10, transient = TRUE)".to_string()
+        let timeout_setup = match timeout_sec {
+            Some(secs) => format!("setTimeLimit(elapsed = {}, transient = TRUE)", secs),
+            None => "setTimeLimit(elapsed = Inf, transient = TRUE)".to_string(),
         };
 
         // Non-interactive CRAN default so install.packages does not prompt.
@@ -145,18 +145,12 @@ flush.console()
         self.stdin.write_all(wrapper.as_bytes())?;
         self.stdin.flush()?;
 
-        let timeout = timeout_sec.map(std::time::Duration::from_secs).unwrap_or(std::time::Duration::from_secs(10));
+        let timeout = timeout_sec.map(std::time::Duration::from_secs);
         let start = std::time::Instant::now();
 
         let mut stdout_lines: Vec<String> = Vec::new();
         loop {
-            let recv_res = if timeout.as_secs() > 0 {
-                self.stdout_rx.recv_timeout(std::time::Duration::from_millis(100))
-            } else {
-                self.stdout_rx.recv().map_err(|_| std::sync::mpsc::RecvTimeoutError::Disconnected)
-            };
-
-            match recv_res {
+            match self.stdout_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                 Ok(line) => {
                     let trimmed = line.trim_end_matches(['\r', '\n']);
                     if trimmed == END_MARKER {
@@ -165,9 +159,11 @@ flush.console()
                     stdout_lines.push(trimmed.to_string());
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    if timeout.as_secs() > 0 && start.elapsed() > timeout {
-                        let _ = self.child.kill();
-                        return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Execution timed out"));
+                    if let Some(t) = timeout {
+                        if start.elapsed() > t {
+                            let _ = self.child.kill();
+                            return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Execution timed out"));
+                        }
                     }
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {

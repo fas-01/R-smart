@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { spawn, execSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 import express from "express";
 import cors from "cors";
 import crypto from "node:crypto";
@@ -11,19 +11,20 @@ function findR() {
   if (process.env.RLAB_R_PATH) {
     const path = process.env.RLAB_R_PATH;
     if (existsSync(path) && (path.endsWith("R.exe") || path.endsWith("R"))) {
-      return path;
+      try {
+        const out = execSync(`"${path}" --version`).toString();
+        if (out.includes("R version")) return path;
+      } catch (e) {}
     }
   }
-  const commonPaths = [
-    "C:\\Program Files\\R\\R-4.5.0\\bin\\x64\\R.exe",
-    "C:\\Program Files\\R\\R-4.4.2\\bin\\x64\\R.exe",
-    "C:\\Program Files\\R\\R-4.4.1\\bin\\x64\\R.exe",
-    "C:\\Program Files\\R\\R-4.4.0\\bin\\x64\\R.exe",
-    "C:\\Program Files\\R\\R-4.3.3\\bin\\x64\\R.exe",
-    "C:\\Program Files\\R\\R-4.3.2\\bin\\x64\\R.exe",
-  ];
-  for (const p of commonPaths) {
-    if (existsSync(p)) return p;
+  const base = "C:\\Program Files\\R";
+  if (existsSync(base)) {
+    const dirs = readdirSync(base);
+    dirs.sort().reverse();
+    for (const d of dirs) {
+      const p = `${base}\\${d}\\bin\\x64\\R.exe`;
+      if (existsSync(p)) return p;
+    }
   }
   return null;
 }
@@ -61,7 +62,7 @@ app.use((req, res, next) => {
 
 app.get("/api/health", (_req, res) => {
   const rPath = findR();
-  res.json({ ok: true, rPath, rFound: Boolean(rPath) });
+  res.json({ ok: true, rFound: Boolean(rPath) });
 });
 
 app.post("/api/execute", async (req, res) => {

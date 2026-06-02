@@ -1,5 +1,6 @@
 # IDE / Agent Plans
 *.plan.md
+da.md
 
 # Dependencies
 node_modules/
@@ -9,3 +10,4 @@ dist/
 
 # Tauri build artifacts
 src-tauri/target/
+
