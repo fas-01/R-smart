@@ -65,7 +65,7 @@ pub struct RExecuteResult {
 }
 
 #[tauri::command]
-pub fn r_execute(code: String) -> RExecuteResult {
+pub fn r_execute(code: String, timeout_sec: Option<u64>) -> RExecuteResult {
     let code = code.trim();
     if code.is_empty() {
         return RExecuteResult {
@@ -89,7 +89,7 @@ pub fn r_execute(code: String) -> RExecuteResult {
         };
     };
 
-    match session.evaluate(code) {
+    match session.evaluate(code, timeout_sec) {
         Ok((stdout, stderr, exit_code)) => RExecuteResult {
             ok: exit_code == 0,
             stdout,

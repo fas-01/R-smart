@@ -86,24 +86,41 @@ impl RSession {
         path.to_string_lossy().replace('\\', "/").replace('\'', "\\'")
     }
 
-    pub fn evaluate(&mut self, code: &str) -> std::io::Result<(String, String)> {
+    pub fn evaluate(&mut self, code: &str, timeout_sec: Option<u64>) -> std::io::Result<(String, String)> {
         self.stderr_acc.lock().unwrap_or_else(|e| e.into_inner()).clear();
 
         let script_path = self.script_path();
         std::fs::write(&script_path, code)?;
 
         let path_lit = Self::r_string_literal(&script_path);
+        
+        let timeout_setup = if let Some(secs) = timeout_sec {
+            if secs > 0 {
+                format!("setTimeLimit(elapsed = {}, transient = TRUE)", secs)
+            } else {
+                "setTimeLimit(elapsed = Inf, transient = TRUE)".to_string()
+            }
+        } else {
+            "setTimeLimit(elapsed = 10, transient = TRUE)".to_string()
+        };
+
         // Non-interactive CRAN default so install.packages does not prompt.
         let wrapper = format!(
             r#"options(repos = c(CRAN = "https://cloud.r-project.org"), BioC_mirror = "https://bioconductor.org")
 tryCatch({{
+  {}
   invisible(source('{path_lit}', local = FALSE, echo = FALSE, print.eval = TRUE))
 }}, error = function(e) {{
   cat("Error:", conditionMessage(e), "\n")
+}}, finally = {{
+  setTimeLimit(elapsed = Inf, transient = TRUE)
 }})
 cat("{END_MARKER}\n")
 flush.console()
-"#
+"#,
+            timeout_setup,
+            path_lit = path_lit,
+            END_MARKER = END_MARKER
         );
 
         self.stdin.write_all(wrapper.as_bytes())?;
@@ -227,12 +244,12 @@ impl RSessionHandle {
         Ok(())
     }
 
-    pub fn evaluate(&self, code: &str) -> Result<(String, String, i32), String> {
+    pub fn evaluate(&self, code: &str, timeout_sec: Option<u64>) -> Result<(String, String, i32), String> {
         self.ensure_session()?;
         let mut guard = self.session.lock().unwrap_or_else(|e| e.into_inner());
         let session = guard.as_mut().ok_or("R session not available")?;
 
-        match session.evaluate(code) {
+        match session.evaluate(code, timeout_sec) {
             Ok((stdout, stderr)) => {
                 let stdout_err = stdout.starts_with("Error:");
                 let stderr_fatal = stderr.contains("Execution halted");

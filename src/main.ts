@@ -124,6 +124,27 @@ function render() {
       actions.appendChild(rmBtn);
     }
     
+    const timeoutSelect = document.createElement("select");
+    timeoutSelect.className = "timeout-select toolbar-btn";
+    timeoutSelect.dataset.action = "timeout";
+    const options = [
+      { label: "1秒", value: 1 },
+      { label: "10秒", value: 10 },
+      { label: "30秒", value: 30 },
+      { label: "1分", value: 60 },
+      { label: "5分", value: 300 },
+      { label: "30分", value: 1800 },
+      { label: "無制限", value: 0 }
+    ];
+    options.forEach(opt => {
+      const optionEl = document.createElement("option");
+      optionEl.value = String(opt.value);
+      optionEl.textContent = opt.label;
+      if (opt.value === 10) optionEl.selected = true;
+      timeoutSelect.appendChild(optionEl);
+    });
+    actions.appendChild(timeoutSelect);
+    
     const runBtn = document.createElement("button");
     runBtn.type = "button";
     runBtn.className = "run-btn";
@@ -245,6 +266,9 @@ async function runCell(index: number) {
   const runBtn = document.querySelector<HTMLButtonElement>(
     `.cell[data-cell-index="${index}"] [data-action='run']`,
   );
+  const timeoutSelect = document.querySelector<HTMLSelectElement>(
+    `.cell[data-cell-index="${index}"] [data-action='timeout']`,
+  );
   if (!view || !outputEl) return;
 
   const code = view.state.doc.toString();
@@ -252,9 +276,12 @@ async function runCell(index: number) {
   outputEl.textContent = "実行中…";
   outputEl.className = "output";
   if (runBtn) runBtn.disabled = true;
+  if (timeoutSelect) timeoutSelect.disabled = true;
+
+  const timeoutSec = timeoutSelect ? Number(timeoutSelect.value) : 10;
 
   try {
-    const data = await invoke<RExecuteResult>("r_execute", { code });
+    const data = await invoke<RExecuteResult>("r_execute", { code, timeoutSec });
     if (data.error) {
       outputEl.textContent = data.error;
       outputEl.className = "output err";
@@ -267,6 +294,7 @@ async function runCell(index: number) {
     outputEl.className = "output err";
   } finally {
     if (runBtn) runBtn.disabled = false;
+    if (timeoutSelect) timeoutSelect.disabled = false;
   }
 }
 
