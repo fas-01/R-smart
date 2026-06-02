@@ -60,9 +60,9 @@ function render() {
   banner.style.justifyContent = "center";
   banner.style.alignItems = "center";
   banner.style.position = "relative";
-  
+
   const bannerText = document.createElement("span");
-  bannerText.textContent = "⚠️ 警告: 信頼できない R コードを実行するとシステムが乗っ取られる危険性があります（OS コマンドインジェクション）。信頼できるコードのみ実行してください。";
+  bannerText.textContent = "警告: 信頼できない R コードを実行するとシステムが乗っ取られる危険性があります（OS コマンドインジェクション）。信頼できるコードのみ実行してください。";
   banner.appendChild(bannerText);
 
   const closeBtn = document.createElement("button");
@@ -102,18 +102,18 @@ function render() {
     section.dataset.cellIndex = String(index);
 
     const canRemove = cells.length > 1;
-    
+
     const toolbar = document.createElement("div");
     toolbar.className = "cell-toolbar";
-    
+
     const label = document.createElement("span");
     label.className = "cell-label";
     label.textContent = `In [${index + 1}]`;
     toolbar.appendChild(label);
-    
+
     const actions = document.createElement("div");
     actions.className = "cell-actions";
-    
+
     if (canRemove) {
       const rmBtn = document.createElement("button");
       rmBtn.type = "button";
@@ -123,7 +123,7 @@ function render() {
       rmBtn.textContent = "✕";
       actions.appendChild(rmBtn);
     }
-    
+
     const timeoutSelect = document.createElement("select");
     timeoutSelect.className = "timeout-select toolbar-btn";
     timeoutSelect.dataset.action = "timeout";
@@ -144,14 +144,14 @@ function render() {
       timeoutSelect.appendChild(optionEl);
     });
     actions.appendChild(timeoutSelect);
-    
+
     const runBtn = document.createElement("button");
     runBtn.type = "button";
     runBtn.className = "run-btn";
     runBtn.dataset.action = "run";
     runBtn.textContent = "▶ 実行";
     actions.appendChild(runBtn);
-    
+
     toolbar.appendChild(actions);
     section.appendChild(toolbar);
 
