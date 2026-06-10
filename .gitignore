@@ -1,6 +1,8 @@
 # IDE / Agent Plans
 *.plan.md
 da.md
+GEMINI.md
+本文.md
 
 # Dependencies
 node_modules/
