@@ -18,7 +18,7 @@ Rがインストールされていれば、ダウンロードした `.exe` フ�
 
 手動でコンパイルすることなく、すぐにアプリを使用したい場合は、以下のビルド済みインストーラーをダウンロードして実行してください：
 
- **[Windows用インストーラー (R_Smart_0.2.3_x64-setup.exe) を直接ダウンロード](./releases/R_Smart_0.2.3_x64-setup.exe)**
+ **[Windows用インストーラー (R_Smart_0.3.0_x64-setup.exe) を直接ダウンロード](./releases/R_Smart_0.3.0_x64-setup.exe)**
 
 > [!NOTE]
 > アプリを動作させるには、お使いのPCに **[R (R-project)](https://www.r-project.org/)** がインストールされ、環境変数 `PATH` に設定されている必要があります。
