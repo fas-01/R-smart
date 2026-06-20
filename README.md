@@ -27,7 +27,7 @@ Rがインストールされていれば、ダウンロードした `.exe` フ�
 
 ## 🎨 スクリーンショット
 
-![R Smart UI Mockup](./screenshots.png)
+![R Smart UI Mockup](./screenshot.png)
 
 ---
 
