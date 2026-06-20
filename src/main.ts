@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { createREditor } from "./r-editor";
 import type { EditorView } from "@codemirror/view";
 import "./style.css";
@@ -11,6 +12,19 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 let cells: CellData[] = [{ id: crypto.randomUUID(), code: "1 + 1" }];
 const cellEditors = new Map<number, EditorView>();
 const THEME_KEY = "r-lab-theme";
+let isDirty = false;
+
+function updateDirtyState(dirty: boolean) {
+  isDirty = dirty;
+  const saveBtn = document.querySelector<HTMLButtonElement>("#save-btn");
+  if (saveBtn) {
+    if (isDirty) {
+      saveBtn.classList.add("err-btn");
+    } else {
+      saveBtn.classList.remove("err-btn");
+    }
+  }
+}
 
 function detectInitialTheme(): Theme {
   const stored = localStorage.getItem(THEME_KEY);
@@ -66,6 +80,20 @@ function render() {
   addCellBtn.className = "toolbar-btn";
   addCellBtn.textContent = "＋ セルを追加";
   header.appendChild(addCellBtn);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.id = "save-btn";
+  saveBtn.className = isDirty ? "toolbar-btn err-btn" : "toolbar-btn";
+  saveBtn.textContent = "保存";
+  header.appendChild(saveBtn);
+
+  const loadBtn = document.createElement("button");
+  loadBtn.type = "button";
+  loadBtn.id = "load-btn";
+  loadBtn.className = "toolbar-btn";
+  loadBtn.textContent = "開く";
+  header.appendChild(loadBtn);
 
   app.appendChild(header);
 
@@ -200,6 +228,7 @@ function render() {
       doc: cell.code,
       onChange: (code) => {
         cells[index]!.code = code;
+        updateDirtyState(true);
       },
       onShiftEnter: () => {
         void runCell(index).then(() => focusNextCell(index));
@@ -210,9 +239,13 @@ function render() {
 
   document.querySelector<HTMLButtonElement>("#add-cell")!.addEventListener("click", () => {
     cells.push({ id: crypto.randomUUID(), code: "" });
+    updateDirtyState(true);
     render();
     focusCell(cells.length - 1);
   });
+  
+  document.querySelector<HTMLButtonElement>("#save-btn")!.addEventListener("click", saveNotebook);
+  document.querySelector<HTMLButtonElement>("#load-btn")!.addEventListener("click", loadNotebook);
   const themeBtn = document.querySelector<HTMLButtonElement>("#theme-toggle")!;
   const current = (document.documentElement.getAttribute("data-theme") as Theme | null) ?? "light";
   themeBtn.textContent = current === "dark" ? "ダーク" : "ライト";
@@ -230,6 +263,7 @@ function render() {
       const idx = Number((e.target as HTMLElement).closest(".cell")?.getAttribute("data-cell-index"));
       if (cells.length > 1 && !Number.isNaN(idx)) {
         cells.splice(idx, 1);
+        updateDirtyState(true);
         render();
       }
     });
@@ -394,7 +428,7 @@ async function runCell(index: number) {
   cells[index]!.code = code;
   outputEl.textContent = "実行中…";
   outputEl.className = "output";
-  if (imageContainer) imageContainer.innerHTML = "";
+  if (imageContainer) imageContainer.replaceChildren();
   if (runBtn) runBtn.disabled = true;
   if (timeoutSelect) timeoutSelect.disabled = true;
 
@@ -437,6 +471,81 @@ async function runCell(index: number) {
   } finally {
     if (runBtn) runBtn.disabled = false;
     if (timeoutSelect) timeoutSelect.disabled = false;
+  }
+}
+
+async function saveNotebook() {
+  const filePath = await save({
+    filters: [
+      { name: "R Scripts", extensions: ["R", "r"] },
+      { name: "R Markdown", extensions: ["Rmd", "rmd"] },
+      { name: "Text Files", extensions: ["txt"] }
+    ]
+  });
+
+  if (!filePath) return;
+
+  const ext = filePath.split(".").pop()?.toLowerCase();
+  let content = "";
+
+  if (ext === "rmd") {
+    content = cells.map(c => "```{r}\n" + c.code + "\n```").join("\n\n");
+  } else {
+    content = cells.map(c => c.code).join("\n\n# %%\n\n");
+  }
+
+  try {
+    await invoke("save_file", { path: filePath, content });
+    updateDirtyState(false);
+  } catch (err) {
+    console.error("Failed to save:", err);
+    alert(`保存に失敗しました: ${err}`);
+  }
+}
+
+async function loadNotebook() {
+  const file = await open({
+    multiple: false,
+    filters: [
+      { name: "R Scripts & Text", extensions: ["R", "r", "txt"] },
+      { name: "R Markdown", extensions: ["Rmd", "rmd"] }
+    ]
+  });
+
+  if (!file) return;
+
+  const filePath = Array.isArray(file) ? file[0] : file;
+  
+  try {
+    const content = await invoke<string>("load_file", { path: filePath });
+    const ext = filePath.split(".").pop()?.toLowerCase();
+    
+    let parsedCells: string[] = [];
+
+    if (ext === "rmd") {
+      const regex = /```\{r\}[\s\S]*?\n([\s\S]*?)```/g;
+      let match;
+      while ((match = regex.exec(content)) !== null) {
+        parsedCells.push(match[1].trim());
+      }
+      if (parsedCells.length === 0) {
+        parsedCells.push(content);
+      }
+    } else {
+      parsedCells = content.split(/^[ \t]*#[ \t]*%%[ \t]*$/m).map(s => s.trim());
+    }
+
+    cells = parsedCells.map(code => ({ id: crypto.randomUUID(), code }));
+    
+    if (cells.length === 0) {
+      cells = [{ id: crypto.randomUUID(), code: "" }];
+    }
+    
+    updateDirtyState(false);
+    render();
+  } catch (err) {
+    console.error("Failed to load:", err);
+    alert("読み込みに失敗しました");
   }
 }
 

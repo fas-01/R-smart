@@ -6,6 +6,16 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    {
+      "identifier": "fs:allow-read",
+      "allow": [{ "path": "$HOME/**" }]
+    },
+    {
+      "identifier": "fs:allow-write",
+      "allow": [{ "path": "$HOME/**" }]
+    }
   ]
 }

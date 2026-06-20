@@ -115,9 +115,12 @@ impl RSession {
     fn r_string_literal(path: &Path) -> String {
         let s = path.to_string_lossy().replace('\\', "/");
         s.replace('\"', "\\\"")
+         .replace('\n', "\\n")
+         .replace('\r', "\\r")
+         .replace('\t', "\\t")
     }
 
-    pub fn evaluate(&mut self, code: &str, timeout_sec: Option<u64>) -> std::io::Result<(String, String, Vec<String>)> {
+    pub fn evaluate(&mut self, code: &str, timeout_sec: Option<u64>) -> std::io::Result<(String, String, i32, Vec<String>)> {
         self.stderr_acc.lock().unwrap_or_else(|e| e.into_inner()).clear();
 
         let script_path = self.script_path();
@@ -167,6 +170,7 @@ flush.console()
         let start = std::time::Instant::now();
 
         let mut stdout_lines: Vec<String> = Vec::new();
+        let mut stdout_bytes = 0;
         loop {
             match self.stdout_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                 Ok(line) => {
@@ -174,7 +178,13 @@ flush.console()
                     if trimmed == END_MARKER {
                         break;
                     }
-                    stdout_lines.push(trimmed.to_string());
+                    if stdout_bytes < 1024 * 1024 {
+                        stdout_lines.push(trimmed.to_string());
+                        stdout_bytes += trimmed.len() + 1;
+                        if stdout_bytes >= 1024 * 1024 {
+                            stdout_lines.push("\n[stdout truncated due to size limit]".to_string());
+                        }
+                    }
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     if let Some(t) = timeout {
@@ -224,7 +234,12 @@ flush.console()
             let _ = std::fs::remove_file(&path);
         }
 
-        Ok((stdout, stderr, images))
+        let stdout_err = stdout.starts_with("Error:");
+        let stderr_fatal = stderr.contains("Execution halted");
+        let ok = !stdout_err && !stderr_fatal;
+        let exit_code = if ok { 0 } else { 1 };
+
+        Ok((stdout, stderr, exit_code, images))
     }
 
     /// Prefix completion via `utils::apropos` (regex from glob `prefix*`).
@@ -306,6 +321,13 @@ flush.console()
     }
 }
 
+impl Drop for RSession {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 pub struct RSessionHandle {
     r_path: String,
     session: Mutex<Option<RSession>>,
@@ -338,11 +360,7 @@ impl RSessionHandle {
         let session = guard.as_mut().ok_or("R session not available")?;
 
         match session.evaluate(code, timeout_sec) {
-            Ok((stdout, stderr, images)) => {
-                let stdout_err = stdout.starts_with("Error:");
-                let stderr_fatal = stderr.contains("Execution halted");
-                let ok = !stdout_err && !stderr_fatal;
-                let exit_code = if ok { 0 } else { 1 };
+            Ok((stdout, stderr, exit_code, images)) => {
                 Ok((stdout, stderr, exit_code, images))
             }
             Err(e) => {
